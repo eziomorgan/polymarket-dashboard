@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import type { Market } from "@/types/Market";
 
+type MarketsApiResponse = {
+  markets?: Market[];
+  source?: "live" | "fallback";
+  error?: string;
+};
+
 const formatPrice = (value: number): string => {
   if (!Number.isFinite(value)) {
     return "0.00";
@@ -52,6 +58,9 @@ export default function MarketsTable() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"live" | "fallback" | null>(
+    null,
+  );
 
   useEffect(() => {
     const loadMarkets = async () => {
@@ -61,14 +70,17 @@ export default function MarketsTable() {
           throw new Error(`Request failed with status ${res.status}`);
         }
 
-        const data = await res.json();
+        const data = (await res.json()) as MarketsApiResponse;
         const marketsResponse: Market[] = Array.isArray(data?.markets)
           ? data.markets
           : [];
+
         setMarkets(marketsResponse);
+        setDataSource(data?.source ?? null);
       } catch (err) {
         console.error("Error fetching markets:", err);
         setError("Failed to load markets. Please try again later.");
+        setDataSource(null);
       } finally {
         setLoading(false);
       }
@@ -83,48 +95,56 @@ export default function MarketsTable() {
     return <p className="text-red-600" role="alert">{error}</p>;
 
   return (
-    <table className="border-collapse border border-gray-300 w-full text-sm">
-      <thead>
-        <tr className="bg-gray-100">
-          <th className="border p-2">Market</th>
-          <th className="border p-2">YES Price</th>
-          <th className="border p-2">NO Price</th>
-          <th className="border p-2">Volume (24h)</th>
-          <th className="border p-2">Liquidity</th>
-          <th className="border p-2">Ends</th>
-        </tr>
-      </thead>
-      <tbody>
-        {markets.length === 0 ? (
-          <tr>
-            <td
-              className="border p-4 text-center text-gray-500"
-              colSpan={6}
-            >
-              No markets available.
-            </td>
+    <div className="space-y-2">
+      {dataSource === "fallback" && (
+        <p className="text-sm text-amber-600" role="status">
+          Showing a cached Polymarket markets snapshot while the live API is
+          unreachable.
+        </p>
+      )}
+      <table className="border-collapse border border-gray-300 w-full text-sm">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="border p-2">Market</th>
+            <th className="border p-2">YES Price</th>
+            <th className="border p-2">NO Price</th>
+            <th className="border p-2">Volume (24h)</th>
+            <th className="border p-2">Liquidity</th>
+            <th className="border p-2">Ends</th>
           </tr>
-        ) : (
-          markets.map((market) => {
-            const yes = formatPrice(market.outcomePrices.yes);
-            const no = formatPrice(market.outcomePrices.no);
-            const volume = formatCurrency(market.volume);
-            const liquidity = formatCurrency(market.liquidity);
-            const ends = formatEndDate(market.endDate);
+        </thead>
+        <tbody>
+          {markets.length === 0 ? (
+            <tr>
+              <td
+                className="border p-4 text-center text-gray-500"
+                colSpan={6}
+              >
+                No markets available.
+              </td>
+            </tr>
+          ) : (
+            markets.map((market) => {
+              const yes = formatPrice(market.outcomePrices.yes);
+              const no = formatPrice(market.outcomePrices.no);
+              const volume = formatCurrency(market.volume);
+              const liquidity = formatCurrency(market.liquidity);
+              const ends = formatEndDate(market.endDate);
 
-            return (
-              <tr key={market.id}>
-                <td className="border p-2">{market.question}</td>
-                <td className="border p-2">{yes}</td>
-                <td className="border p-2">{no}</td>
-                <td className="border p-2">{volume}</td>
-                <td className="border p-2">{liquidity}</td>
-                <td className="border p-2">{ends}</td>
-              </tr>
-            );
-          })
-        )}
-      </tbody>
-    </table>
+              return (
+                <tr key={market.id}>
+                  <td className="border p-2">{market.question}</td>
+                  <td className="border p-2">{yes}</td>
+                  <td className="border p-2">{no}</td>
+                  <td className="border p-2">{volume}</td>
+                  <td className="border p-2">{liquidity}</td>
+                  <td className="border p-2">{ends}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { FALLBACK_MARKETS } from "@/data/fallbackMarkets";
 import type { Market } from "@/types/Market";
 
 const GAMMA_URL = "https://gamma-api.polymarket.com";
@@ -112,30 +113,72 @@ const normaliseMarketsPayload = (payload: unknown): RawMarket[] => {
   return [];
 };
 
-export async function fetchMarkets(limit = 50): Promise<Market[]> {
-  const response = await client.get("/markets", {
-    params: {
-      limit,
-      active: true,
+const normaliseMarket = (market: RawMarket): Market | null => {
+  const id = market.id?.trim();
+  const question = market.question?.trim();
+
+  if (!id || !question) {
+    return null;
+  }
+
+  return {
+    id,
+    question,
+    outcomePrices: {
+      yes: pickOutcomePrice(market, "yes"),
+      no: pickOutcomePrice(market, "no"),
     },
-  });
+    volume:
+      toNumber(market.volume24h) ||
+      toNumber(market.volume24Hr) ||
+      toNumber(market.volume_24h),
+    liquidity: toNumber(market.liquidity) || toNumber(market.totalLiquidity),
+    endDate: resolveEndDate(market),
+  };
+};
 
-  const marketsPayload = normaliseMarketsPayload(response.data);
+const buildFallbackMarkets = (limit: number): Market[] => {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
 
-  return marketsPayload
-    .map((market) => ({
-      id: market.id ?? "",
-      question: market.question ?? "",
-      outcomePrices: {
-        yes: pickOutcomePrice(market, "yes"),
-        no: pickOutcomePrice(market, "no"),
+  if (safeLimit === 0) {
+    return [...FALLBACK_MARKETS];
+  }
+
+  return FALLBACK_MARKETS.slice(0, safeLimit);
+};
+
+export type MarketsFetchResult = {
+  markets: Market[];
+  source: "live" | "fallback";
+};
+
+export async function fetchMarkets(limit = 50): Promise<MarketsFetchResult> {
+  try {
+    const response = await client.get("/markets", {
+      params: {
+        limit,
+        active: true,
       },
-      volume:
-        toNumber(market.volume24h) ||
-        toNumber(market.volume24Hr) ||
-        toNumber(market.volume_24h),
-      liquidity: toNumber(market.liquidity) || toNumber(market.totalLiquidity),
-      endDate: resolveEndDate(market),
-    }))
-    .filter((market): market is Market => Boolean(market.id && market.question));
+    });
+
+    const marketsPayload = normaliseMarketsPayload(response.data);
+    const markets = marketsPayload
+      .map(normaliseMarket)
+      .filter((market): market is Market => market !== null);
+
+    if (markets.length > 0) {
+      return { markets, source: "live" };
+    }
+
+    console.warn(
+      "Polymarket API returned an empty markets payload; using bundled fallback data.",
+    );
+  } catch (error) {
+    console.error("Error fetching markets from Polymarket:", error);
+  }
+
+  return {
+    markets: buildFallbackMarkets(limit),
+    source: "fallback",
+  };
 }

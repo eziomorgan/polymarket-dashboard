@@ -3,8 +3,8 @@ import { fetchMarkets } from "@/lib/polymarket";
 
 export async function GET() {
   try {
-    const markets = await fetchMarkets();
-    return NextResponse.json({ markets });
+    const { markets, source } = await fetchMarkets();
+    return NextResponse.json({ markets, source });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to fetch markets";
